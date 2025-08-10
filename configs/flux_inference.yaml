@@ -1,0 +1,180 @@
+# Example configuration for Flow Matching training
+
+model:
+  # Structured component specifications
+  vae:
+    module: "models.flux_vae.AutoEncoder"
+    params:
+      in_channels: 3
+      ch: 128
+      out_ch: 3
+      ch_mult: [ 1, 2, 4, 4 ]
+      num_res_blocks: 2
+      z_channels: 16
+      scale_factor: 0.3611
+      shift_factor: 0.1159
+
+  text_encoder:
+    module: "models.flux_t5.T5Embedder"
+    params:
+      version: "google/t5-v1_1-xxl"
+      max_length: 512
+      dtype: "bf16"
+      compile: true
+      float32_matmul_precision: "high"
+      padding_side: "right"
+      attn_mask_padding: false
+      output_exclude_padding: false
+    fsdp:
+      shard_size: 4
+      param_dtype: "bf16"
+      reduce_dtype: "fp32"
+      ac_freq: 0
+      blocks_attr: "hf_module.encoder.block"
+      reshard_after_forward_policy: "always"
+
+  clip_encoder:
+    module: "models.flux_clip.CLIPEmbedder"
+    params:
+      version: "openai/clip-vit-large-patch14"
+      max_length: 77
+      dtype: "bf16"
+      compile: true
+      float32_matmul_precision: "high"
+    fsdp:
+      shard_size: 4
+      param_dtype: "bf16"
+      reduce_dtype: "fp32"
+      ac_freq: 0
+      blocks_attr: "hf_module.text_model.encoder.layers"
+      reshard_after_forward_policy: "always"
+
+  patchifier:
+    module: "models.patchifier.Patchifier"
+    params:
+      patch_size: [ 1, 2, 2 ] # [frames, height, width] - DiT typical
+      vae_latent_channels: 16 # VAE latent channels
+      # must agree with vae
+      vae_compression_factors: [ 1, 8, 8 ] # VAE compression factors [frames, height, width]
+
+  denoiser:
+    module: "models.flux_denoiser.FluxDenoiser"
+    params:
+      d_model: 3072
+      d_head: 128
+      n_ds_blocks: 19
+      n_ss_blocks: 38
+      d_txt: 4096
+      d_vec: 768
+      # must match vae_latent_channels * prod(vae_compression_factors) in patchifier
+      d_img: 64
+      # must have sum equal to d_head;
+      # must have number of elements equal to patch_size in patchifier
+      rope_axis_dim: [ 16, 56, 56 ] # tyx coordinates
+      guidance_embed: true
+    fsdp:
+      meta_device_init: true
+      shard_size: 4
+      param_dtype: "bf16"
+      reduce_dtype: "fp32"
+      ac_freq: 1
+      blocks_attr: [ "double_blocks", "single_blocks" ]
+      reshard_after_forward_policy: "default"
+
+  time_sampler:
+    module: "utils_fm.noiser.TimeSampler"
+    params:
+      use_logit_normal: false
+      mu: 0.0 # Mean of the logit normal distribution
+      sigma: 1.0 # Standard deviation of the logit normal distribution
+
+  time_warper:
+    module: "utils_fm.noiser.TimeWarper"
+    params:
+      base_len: 256 # Base sequence length
+      base_shift: 0.5 # Base shift parameter for time warping
+      max_len: 4096 # Maximum sequence length
+      max_shift: 1.15 # Maximum shift parameter for time warping
+
+  time_weighter:
+    module: "utils_fm.noiser.TimeWeighter"
+    params:
+      use_logit_normal: true
+      mu: 0.0 # Mean of the logit normal distribution
+      sigma: 1.0 # Standard deviation of the logit normal distribution
+
+  flow_noiser:
+    module: "utils_fm.noiser.FlowNoiser"
+    params:
+      compute_dtype: "fp32" # Internal computation dtype: "fp32", "fp16", "bf16"
+
+  balancer:
+    use_dit_balancer: true # Use DIT balancer for sequence length balancing
+    dit_balancer_specs: "g1n4" # Bag specifications for DIT balancer
+    dit_balancer_gamma: 0.5 # Gamma parameter for DIT workload estimator
+
+trainer:
+  module: "trainers.dit_trainer.DiTTrainer"
+  params:
+    # Text dropout probability
+    txt_drop_prob: 0.1
+
+    # EMA Settings
+    ema_decay: 0.999
+
+    # Training Schedule
+    max_steps: 1_000_000
+    warmup_steps: 2000
+
+    # AdamW Optimizer Settings
+    max_lr: 0.0001 # Maximum learning rate for AdamW optimizer
+    min_lr: 0.00001 # Minimum learning rate for cosine decay schedule
+    weight_decay: 0.0 # L2 regularization weight decay coefficient
+    adam_betas: [ 0.9, 0.95 ] # Beta coefficients for AdamW momentum terms [beta1, beta2]
+
+    # Gradient accumulation settings
+    total_batch_size: -1
+
+    # Gradient Safeguarding Settings
+    gradient_clip_norm: 1.0
+    grad_norm_spike_threshold: 2.0
+    grad_norm_spike_detection_start_step: 2000
+
+    # Checkpoint Settings
+    init_ckpt: null # Optional: "path/to/checkpoint"
+    init_ckpt_load_plan: "ckpt_model:mem_model,ckpt_ema:mem_ema,ckpt_optimizer:mem_optimizer,ckpt_scheduler:mem_scheduler,ckpt_step:mem_step"
+    ckpt_freq: 1000
+    exp_dir: "./experiments/example"
+
+    # Logging Settings
+    log_freq: 20
+    wandb_project: "minFM"
+    wandb_name: null # Optional: experiment name, defaults to wandb auto-naming
+    wandb_entity: null # Optional: wandb entity/organization
+    wandb_host: null # Optional: wandb host
+    wandb_mode: "disabled" # online, offline, or disabled (disabled = no wandb logging)
+
+    # Validation Settings
+    val_freq: 1000
+    val_num_samples: 10_000
+
+    # Inference settings
+    inference_freq: 10000
+
+inferencer:
+  ckpt_dir: "$MINFM_CACHE_DIR/black-forest-labs/FLUX.1-dev/denoiser-dcp"
+  inference_ops_args:
+    use_ema: false
+    prompt_file: "./resources/inference_prompts.txt"
+    output_dir: "./experiments/inference_results"
+    img_fhw: [ 1, 512, 512 ]
+    samples_per_prompt: 1
+    num_steps: 50
+    neg_prompt: ""
+    cfg_scale: 0.0
+    eta: 0.0
+    file_ext: "jpg"
+    per_gpu_bs: 16
+    guidance: 4.0 # flux-dev specific, as it is guidance-distilled
+    sample_method: "ddim"
+    save_as_npz: false

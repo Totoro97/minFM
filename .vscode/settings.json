@@ -1,0 +1,27 @@
+{
+    "python.defaultInterpreterPath": "./.venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+    
+    // Ruff Configuration
+    "[python]": {
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.fixAll.ruff": "explicit",
+            "source.organizeImports.ruff": "explicit"
+        },
+        "editor.defaultFormatter": "charliermarsh.ruff"
+    },
+    
+    // Ruff settings
+    "ruff.enable": true,
+    "ruff.fixAll": true,
+    "ruff.organizeImports": true,
+    
+    // Editor settings to match ruff config
+    "editor.rulers": [120],
+    "editor.wordWrapColumn": 120,
+    
+    // MyPy settings
+    "mypy-type-checker.args": ["--ignore-missing-imports"],
+    "python.analysis.typeCheckingMode": "strict"
+}
