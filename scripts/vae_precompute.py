@@ -7,16 +7,16 @@ and computes VAE latent embeddings for each image, saving them as individual .pt
 
 Usage:
     # Single GPU (with bfloat16 by default):
-    python vae_precompute.py --config configs/flux_tiny_imagenet.yaml --output_dir /path/to/output
+    python scripts/vae_precompute.py --config configs/flux_tiny_imagenet.yaml --output_dir /path/to/output
 
     # Single GPU (disable bfloat16):
-    python vae_precompute.py --config configs/flux_tiny_imagenet.yaml --output_dir /path/to/output --no-bfloat16
+    python scripts/vae_precompute.py --config configs/flux_tiny_imagenet.yaml --output_dir /path/to/output --no-bfloat16
 
     # Multi-GPU distributed processing:
-    torchrun --nproc_per_node=4 vae_precompute.py --config configs/flux_tiny_imagenet.yaml --output_dir /path/to/output
+    torchrun --nproc_per_node=4 scripts/vae_precompute.py --config configs/flux_tiny_imagenet.yaml --output_dir /path/to/output
 
     # Archive output to tar.gz:
-    python vae_precompute.py --config configs/flux_tiny_imagenet.yaml --output_dir /path/to/output --archive-output
+    python scripts/vae_precompute.py --config configs/flux_tiny_imagenet.yaml --output_dir /path/to/output --archive-output
 
 
 The script will create the following directory structure:
@@ -366,6 +366,7 @@ def main():
     
     # Create data module
     data_config = config['data']
+    data_config['params']['use_precomputed_latents'] = False # We need to load the images to compute the latents
     data_module = create_data_module(data_config, rank)
 
     # Process each split
