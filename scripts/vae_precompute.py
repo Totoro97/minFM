@@ -18,18 +18,6 @@ Usage:
     # Archive output to tar.gz:
     python scripts/vae_precompute.py --config configs/flux_tiny_imagenet.yaml --output_dir /path/to/output --archive-output
 
-
-The script will create the following directory structure:
-    output_dir/
-        train/
-            ILSVRC2012_val_00000001.pt
-            ILSVRC2012_val_00000002.pt
-            ...
-        val/
-            ILSVRC2012_val_00000001.pt
-            ILSVRC2012_val_00000002.pt
-            ...
-
 Note: In distributed mode, each rank processes a subset of the data. The dataset is automatically 
 partitioned across all available processes, with each process handling different images.
 """
